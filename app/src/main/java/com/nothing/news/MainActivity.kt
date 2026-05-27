@@ -34,6 +34,33 @@ class MainActivity : ComponentActivity() {
             val viewModel: com.nothing.news.ui.news.NewsViewModel = hiltViewModel()
             val themePreference by viewModel.themePreference.collectAsState()
             
+            // Handle Intent inside Compose
+            val currentIntent = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<android.content.Intent?>(intent) }
+            
+            androidx.compose.runtime.DisposableEffect(Unit) {
+                val listener = androidx.core.util.Consumer<android.content.Intent> { newIntent ->
+                    currentIntent.value = newIntent
+                }
+                addOnNewIntentListener(listener)
+                onDispose { removeOnNewIntentListener(listener) }
+            }
+            
+            androidx.compose.runtime.LaunchedEffect(currentIntent.value) {
+                val intentVal = currentIntent.value
+                if (intentVal?.action == android.content.Intent.ACTION_SEND && intentVal.type == "text/plain") {
+                    intentVal.getStringExtra(android.content.Intent.EXTRA_TEXT)?.let { text ->
+                        // Extract URL using simple regex
+                        val urlRegex = """(https?://[^\s]+)""".toRegex()
+                        val url = urlRegex.find(text)?.value
+                        if (url != null) {
+                            viewModel.setSharedUrlToProcess(url)
+                        }
+                    }
+                    // Clear the intent action so it doesn't trigger again on rotation
+                    intentVal.action = null
+                }
+            }
+            
             val darkTheme = when (themePreference) {
                 "Light" -> false
                 "Dark" -> true

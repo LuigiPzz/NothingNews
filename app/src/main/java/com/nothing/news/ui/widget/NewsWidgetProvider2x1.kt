@@ -9,10 +9,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.PorterDuff
-import android.graphics.Typeface
 import android.widget.RemoteViews
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -28,7 +26,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class NewsWidgetProvider : AppWidgetProvider() {
+class NewsWidgetProvider2x1 : AppWidgetProvider() {
 
     @Inject
     lateinit var newsDao: NewsDao
@@ -37,16 +35,16 @@ class NewsWidgetProvider : AppWidgetProvider() {
     private val scope = CoroutineScope(Dispatchers.IO + job)
 
     companion object {
-        const val ACTION_SYNC = "com.nothing.news.ACTION_SYNC_WIDGET_1x1"
-        private const val PREFS_NAME = "news_widget_prefs_1x1"
-        private const val KEY_IS_SYNCING = "is_syncing_1x1"
+        const val ACTION_SYNC = "com.nothing.news.ACTION_SYNC_WIDGET"
+        private const val PREFS_NAME = "news_widget_prefs"
+        private const val KEY_IS_SYNCING = "is_syncing_2x1"
 
         fun triggerUpdate(context: Context) {
-            val intent = Intent(context, NewsWidgetProvider::class.java).apply {
+            val intent = Intent(context, NewsWidgetProvider2x1::class.java).apply {
                 action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
             }
             val ids = AppWidgetManager.getInstance(context)
-                .getAppWidgetIds(ComponentName(context, NewsWidgetProvider::class.java))
+                .getAppWidgetIds(ComponentName(context, NewsWidgetProvider2x1::class.java))
             intent.putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
             context.sendBroadcast(intent)
         }
@@ -101,13 +99,13 @@ class NewsWidgetProvider : AppWidgetProvider() {
             val unreadCount = newsDao.getUnreadCount()
             val isSyncing = isSyncing(context)
             
-            val views = RemoteViews(context.packageName, R.layout.news_widget)
+            val views = RemoteViews(context.packageName, R.layout.news_widget_2x1)
             
             val bitmap = createWidgetBitmap(context, unreadCount, isSyncing)
             views.setImageViewBitmap(R.id.widget_image, bitmap)
 
-            // Dynamic Background: Red when syncing, Default otherwise
-            val bgRes = if (isSyncing) R.drawable.widget_background_red else R.drawable.widget_background
+            // Dynamic Background: Red Pill when syncing, Default Pill otherwise
+            val bgRes = if (isSyncing) R.drawable.widget_background_pill_red else R.drawable.widget_background_pill
             views.setInt(R.id.widget_container, "setBackgroundResource", bgRes)
 
             // Show/Hide real animated ProgressBar
@@ -127,7 +125,7 @@ class NewsWidgetProvider : AppWidgetProvider() {
                     views.setOnClickPendingIntent(R.id.widget_container, null)
                     views.setOnClickPendingIntent(R.id.widget_image, null)
                 } else {
-                    val intent = Intent(context, NewsWidgetProvider::class.java).apply {
+                    val intent = Intent(context, NewsWidgetProvider2x1::class.java).apply {
                         action = ACTION_SYNC
                     }
                     val pendingIntent = PendingIntent.getBroadcast(
@@ -145,7 +143,7 @@ class NewsWidgetProvider : AppWidgetProvider() {
     }
 
     private fun createWidgetBitmap(context: Context, unreadCount: Int, isSyncing: Boolean): Bitmap {
-        val width = 300
+        val width = 600
         val height = 300
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -153,7 +151,6 @@ class NewsWidgetProvider : AppWidgetProvider() {
         // 1. Transparent background for the bitmap (handled by widget_container)
         canvas.drawColor(Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-        // Load authentic Nothing fonts
         val ndot57 = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ndot57)
         val ntype82 = androidx.core.content.res.ResourcesCompat.getFont(context, R.font.ntype82)
 
@@ -161,33 +158,30 @@ class NewsWidgetProvider : AppWidgetProvider() {
         val newsPaint = Paint().apply {
             color = Color.WHITE
             style = Paint.Style.FILL
-            textSize = 100f // Set to 100f as requested
+            textSize = 110f
             typeface = ndot57
             isAntiAlias = true
-            textAlign = Paint.Align.CENTER
+            textAlign = Paint.Align.LEFT
         }
         
-        // Positioned with more top padding
-        val newsY = height / 2.8f
-        canvas.drawText("NEWS", width / 2f, newsY, newsPaint)
+        val newsX = 40f
+        val centerY = height / 2f + 35f
+        canvas.drawText("NEWS", newsX, centerY, newsPaint)
 
-        // Draw the unread count or X icon
         if (unreadCount > 0) {
             val countPaint = Paint().apply {
-                color = Color.parseColor("#FF2D00") // Nothing Red
+                color = Color.parseColor("#FF2D00")
                 style = Paint.Style.FILL
                 textSize = 120f
                 typeface = ntype82
                 isAntiAlias = true
                 textAlign = Paint.Align.RIGHT
             }
-            // Positioned bottom-right
-            val margin = 40f
-            canvas.drawText(unreadCount.toString(), width - margin, height - margin, countPaint)
+            val margin = 80f
+            canvas.drawText(unreadCount.toString(), width - margin, centerY, countPaint)
         } else if (!isSyncing) {
-            // Draw a thick gray "X" (close-thick style)
             val xPaint = Paint().apply {
-                color = Color.parseColor("#757575") // Nothing Gray
+                color = Color.parseColor("#A0A0A0") // Lighter gray for better contrast
                 style = Paint.Style.STROKE
                 strokeWidth = 14f
                 strokeCap = Paint.Cap.ROUND
@@ -195,11 +189,11 @@ class NewsWidgetProvider : AppWidgetProvider() {
             }
             
             val iconSize = 40f
-            val centerX = width - 85f
-            val centerY = height - 85f
+            val iconX = width - 110f
+            val iconY = height / 2f
             
-            canvas.drawLine(centerX - iconSize, centerY - iconSize, centerX + iconSize, centerY + iconSize, xPaint)
-            canvas.drawLine(centerX + iconSize, centerY - iconSize, centerX - iconSize, centerY + iconSize, xPaint)
+            canvas.drawLine(iconX - iconSize, iconY - iconSize, iconX + iconSize, iconY + iconSize, xPaint)
+            canvas.drawLine(iconX + iconSize, iconY - iconSize, iconX - iconSize, iconY + iconSize, xPaint)
         }
 
         return bitmap

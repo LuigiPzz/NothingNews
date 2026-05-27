@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="32dp"
+    android:minWidth="100dp"
     android:minHeight="32dp"
-    android:targetCellWidth="1"
+    android:targetCellWidth="2"
     android:targetCellHeight="1"
-    android:label="News Count"
+    android:label="News Pill"
     android:updatePeriodMillis="1800000"
-    android:initialLayout="@layout/news_widget"
-    android:resizeMode="none"
+    android:initialLayout="@layout/news_widget_2x1"
+    android:resizeMode="horizontal"
     android:widgetCategory="home_screen|keyguard" />

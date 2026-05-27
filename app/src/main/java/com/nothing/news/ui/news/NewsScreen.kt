@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import kotlinx.coroutines.flow.first
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Star
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -21,10 +22,13 @@ import kotlinx.coroutines.launch
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
@@ -54,6 +58,49 @@ fun NewsScreen(
 ) {
     val articles by viewModel.newsArticles.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    val sharedUrlToProcess by viewModel.sharedUrlToProcess.collectAsState()
+    val isSavingSharedUrl by viewModel.isSavingSharedUrl.collectAsState()
+    
+    if (sharedUrlToProcess != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isSavingSharedUrl) viewModel.setSharedUrlToProcess(null) },
+            title = { Text("Aggiungi ai preferiti") },
+            text = {
+                Column {
+                    Text("Vuoi salvare questo link nei tuoi preferiti?")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = sharedUrlToProcess!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isSavingSharedUrl) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.saveSharedUrl(sharedUrlToProcess!!) },
+                    enabled = !isSavingSharedUrl
+                ) {
+                    Text("Aggiungi")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.setSharedUrlToProcess(null) },
+                    enabled = !isSavingSharedUrl
+                ) {
+                    Text("Annulla")
+                }
+            }
+        )
+    }
+
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val showScrollToTop by remember {
@@ -61,7 +108,18 @@ fun NewsScreen(
     }
     val coroutineScope = rememberCoroutineScope()
     
-    val pullToRefreshState = rememberPullToRefreshState()
+    var refreshCounter by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    
+    LaunchedEffect(isRefreshing) {
+        if (!isRefreshing) {
+            refreshCounter++
+        }
+    }
+    
+    @OptIn(ExperimentalMaterial3Api::class)
+    val pullToRefreshState = androidx.compose.runtime.key(refreshCounter) { 
+        rememberPullToRefreshState() 
+    }
     var showFilterDialog by remember { mutableStateOf(false) }
     var showSortDialog by remember { mutableStateOf(false) }
     var showRemindersSheet by remember { mutableStateOf(false) }
@@ -78,9 +136,8 @@ fun NewsScreen(
     val articleSummaries by viewModel.articleSummaries.collectAsState()
     val loadingSummaries by viewModel.loadingSummaries.collectAsState()
     val allArticles by viewModel.allNewsArticles.collectAsState()
-    
-    val imageLoader = coil.compose.LocalImageLoader.current
-
+    val playingArticleLink by viewModel.playingArticleLink.collectAsState()
+    val isTtsPlaying by viewModel.isTtsPlaying.collectAsState()
     // Safe initial refresh when screen starts
     LaunchedEffect(Unit) {
         viewModel.refreshNews()
@@ -151,7 +208,7 @@ fun NewsScreen(
                                 )
                             }
                             if (index < 3) {
-                                Divider(
+                                HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 20.dp),
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
                                 )
@@ -310,7 +367,7 @@ fun NewsScreen(
                                 )
                             }
                             if (index == 0) {
-                                Divider(
+                                HorizontalDivider(
                                     modifier = Modifier.padding(horizontal = 20.dp),
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
                                 )
@@ -324,18 +381,18 @@ fun NewsScreen(
     
     if (pullToRefreshState.isRefreshing) {
         LaunchedEffect(true) {
-            viewModel.refreshNews()
-        }
-    }
-    
-    LaunchedEffect(isRefreshing) {
-        if (isRefreshing) {
-            pullToRefreshState.startRefresh()
             sessionReadLinks.clear()
             sessionUnreadLinks.clear()
             dissolvingLinks.clear()
             resolvingLinks.clear()
-        } else {
+            
+            viewModel.refreshNews()
+            
+            // Wait for the ViewModel's state to become 'true' first
+            androidx.compose.runtime.snapshotFlow { isRefreshing }.first { it }
+            // Wait for it to return to 'false'
+            androidx.compose.runtime.snapshotFlow { isRefreshing }.first { !it }
+            
             pullToRefreshState.endRefresh()
         }
     }
@@ -345,103 +402,105 @@ fun NewsScreen(
         val manualLinks = dissolvingLinks.keys + resolvingLinks.keys + sessionReadLinks + sessionUnreadLinks
         val combined = if (manualLinks.isEmpty()) baseArticles
         else {
-            val extraItems = allArticles.filter { it.link in manualLinks && it !in baseArticles }
+            val baseArticleLinks = baseArticles.map { it.link }.toSet()
+            val extraItems = allArticles.filter { it.link in manualLinks && it.link !in baseArticleLinks }
             (baseArticles + extraItems)
         }
         combined.distinctBy { it.link }.sortedByDescending { it.pubDateTimestamp }
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(pullToRefreshState.nestedScrollConnection),
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            "NOTHING NEWS",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                        val countText = baseArticles.size.toString()
-                        Text(
-                            text = " · $countText",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 16.sp),
-                            color = Color(0xFFFF2D00)
-                        )
-                    }
-                },
-                actions = {
-                    var showMenu by remember { mutableStateOf(false) }
-                    
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "Menu",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Ricerca") },
-                                onClick = {
-                                    showMenu = false
-                                    onNavigateToSearch()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Filtri") },
-                                onClick = {
-                                    showMenu = false
-                                    showFilterDialog = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Ordinamento") },
-                                onClick = {
-                                    showMenu = false
-                                    showSortDialog = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Promemoria") },
-                                onClick = {
-                                    showMenu = false
-                                    showRemindersSheet = true
-                                },
-                                leadingIcon = { Icon(Icons.Default.Alarm, contentDescription = null) }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Impostazioni") },
-                                onClick = {
-                                    showMenu = false
-                                    onNavigateToSettings()
-                                },
-                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                )
-            )
-        }
+        modifier = Modifier.nestedScroll(pullToRefreshState.nestedScrollConnection)
     ) { padding ->
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, end = 12.dp, top = 20.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Nothing News",
+                        style = MaterialTheme.typography.displayMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    val countText = baseArticles.size.toString()
+                    Text(
+                        text = " · $countText",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 16.sp),
+                        color = Color(0xFFFF2D00)
+                    )
+                }
+                var showMenu by remember { mutableStateOf(false) }
+                
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Menu",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Ricerca") },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToSearch()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Filtri") },
+                            onClick = {
+                                showMenu = false
+                                showFilterDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Ordinamento") },
+                            onClick = {
+                                showMenu = false
+                                showSortDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.Sort, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Promemoria") },
+                            onClick = {
+                                showMenu = false
+                                showRemindersSheet = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.Alarm, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Impostazioni") },
+                            onClick = {
+                                showMenu = false
+                                onNavigateToSettings()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                        )
+                    }
+                }
+            }
+            Box(modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+                .clipToBounds() // THIS FIXES THE BUG: hides the resting state of the PullToRefreshContainer
+            ) {
 
             LazyColumn(
                 state = listState,
@@ -461,12 +520,16 @@ fun NewsScreen(
                         fadeContent = false,
                         onAnimationEnd = {
                             if (isDissolving) {
-                                viewModel.updateReadStatus(article.link, true)
-                                dissolvingLinks.remove(article.link)
-                                if (!sessionReadLinks.contains(article.link)) {
-                                    sessionReadLinks.add(article.link)
+                                if (currentFilter == "Preferiti") {
+                                    viewModel.toggleFavorite(article)
+                                } else {
+                                    viewModel.updateReadStatus(article.link, true)
+                                    if (!sessionReadLinks.contains(article.link)) {
+                                        sessionReadLinks.add(article.link)
+                                    }
+                                    sessionUnreadLinks.remove(article.link)
                                 }
-                                sessionUnreadLinks.remove(article.link)
+                                dissolvingLinks.remove(article.link)
                             } else if (isResolving) {
                                 viewModel.updateReadStatus(article.link, false)
                                 resolvingLinks.remove(article.link)
@@ -485,6 +548,9 @@ fun NewsScreen(
                             isReadSession = (article.isRead || sessionReadLinks.contains(article.link) || isDissolving) && !isResolving,
                             summary = articleSummaries[article.link],
                             isLoadingSummary = loadingSummaries.contains(article.link),
+                            isTtsPlaying = isTtsPlaying && playingArticleLink == article.link,
+                            onPlayTts = { text -> viewModel.playSummaryTts(article.link, text) },
+                            onStopTts = { viewModel.stopSummaryTts() },
                             onClick = {
                                 if (browserPreference == "Interno") {
                                     val intent = CustomTabsIntent.Builder().build()
@@ -513,7 +579,11 @@ fun NewsScreen(
                                 }
                             },
                             onToggleFavorite = {
-                                viewModel.toggleFavorite(article)
+                                if (currentFilter == "Preferiti") {
+                                    dissolvingLinks[article.link] = true
+                                } else {
+                                    viewModel.toggleFavorite(article)
+                                }
                             },
                             onToggleRead = {
                                 val isCurrentlyRead = article.isRead || sessionReadLinks.contains(article.link)
@@ -533,8 +603,8 @@ fun NewsScreen(
                             onClearSummary = {
                                 viewModel.clearSummary(article)
                             },
-                            onSetReminder = { timeInMillis ->
-                                viewModel.addReminder(article.title, article.link, timeInMillis)
+                            onSuggestCalendarEvent = { art ->
+                                viewModel.suggestCalendarEvent(art.title, art.description ?: art.content, art.link)
                             }
                         )
                     }
@@ -559,7 +629,7 @@ fun NewsScreen(
             )
             
             // Scroll to Top Symbol Only
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = showScrollToTop,
                 enter = fadeIn(),
                 exit = fadeOut(),
@@ -594,7 +664,7 @@ fun NewsScreen(
         }
     }
 }
-
+}
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun NewsItem(
@@ -602,18 +672,29 @@ fun NewsItem(
     isReadSession: Boolean = false,
     summary: String?,
     isLoadingSummary: Boolean,
+    isTtsPlaying: Boolean = false,
+    onPlayTts: (String) -> Unit = {},
+    onStopTts: () -> Unit = {},
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
     onToggleRead: () -> Unit,
     onSummarize: () -> Unit,
     onClearSummary: () -> Unit,
-    onSetReminder: (Long) -> Unit
+    onSuggestCalendarEvent: suspend (NewsArticle) -> com.nothing.news.data.repository.CalendarEventSuggestion?
 ) {
     // Typewriter effect state - only reset if the summary text actually changes
-    var lastProcessedSummary by remember { mutableStateOf<String?>(null) }
-    var displayedSummary by remember { mutableStateOf("") }
+    var lastProcessedSummary by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    var displayedSummary by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var showContextMenu by remember { mutableStateOf(false) }
+    var showCalendarDialog by remember { mutableStateOf(false) }
+    var isAnalyzingForCalendar by remember { mutableStateOf(false) }
+    var calendarSuggestion by remember { mutableStateOf<com.nothing.news.data.repository.CalendarEventSuggestion?>(null) }
+    var calendarShowTitle by remember { mutableStateOf(false) }
+    var calendarShowDate by remember { mutableStateOf(false) }
+    var calendarShowTime by remember { mutableStateOf(false) }
+    var calendarReadyToOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     
     val saturation by animateFloatAsState(
         targetValue = if (isReadSession) 0f else 1f,
@@ -634,7 +715,7 @@ fun NewsItem(
     )
     
     val animatedDateColor by animateColorAsState(
-        targetValue = if (isReadSession) Color.Gray.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outline,
+        targetValue = if (isReadSession) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
         animationSpec = tween(durationMillis = 1000),
         label = "date_color"
     )
@@ -673,6 +754,15 @@ fun NewsItem(
         label = "star_alpha"
     ) { favorite ->
         if (favorite) 1f else 0f
+    }
+
+    var triggerExplosion by remember { mutableStateOf(false) }
+    LaunchedEffect(article.isFavorite) {
+        if (article.isFavorite) {
+            triggerExplosion = true
+        } else {
+            triggerExplosion = false
+        }
     }
 
     val currentOnToggleFavorite by rememberUpdatedState(onToggleFavorite)
@@ -773,22 +863,10 @@ fun NewsItem(
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Text(
-                                    text = " • ${
-                                        if (article.pubDateTimestamp > 0) {
-                                            java.text.SimpleDateFormat("HH:mm • dd/MM/yy", java.util.Locale.ITALY).format(java.util.Date(article.pubDateTimestamp))
-                                        } else {
-                                            article.pubDate ?: ""
-                                        }
-                                    }",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = animatedDateColor,
-                                    maxLines = 1
-                                )
+                                
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Spacer(modifier = Modifier.weight(1f))
                                 
                                 // AI Summary Button - Discreetly at the end of source row
                                 if (summary == null && !isLoadingSummary) {
@@ -862,12 +940,23 @@ fun NewsItem(
                                     ) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(14.dp),
-                                            strokeWidth = 2.dp,
+                                            strokeWidth = 1.dp,
                                             color = animatedContentColor
                                         )
                                     }
                                 }
                             }
+                            
+                            Text(
+                                text = if (article.pubDateTimestamp > 0) {
+                                    java.text.SimpleDateFormat("HH:mm • dd/MM/yy", java.util.Locale.ITALY).format(java.util.Date(article.pubDateTimestamp))
+                                } else {
+                                    article.pubDate ?: ""
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = animatedDateColor,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
 
                             Text(
                                 text = article.title,
@@ -877,14 +966,22 @@ fun NewsItem(
                             )
                         }
 
-                        article.imageUrl?.let { imageUrl ->
+                        if (!article.imageUrl.isNullOrBlank()) {
+                            val imageUrl = article.imageUrl
+                            val imageRequest = remember(imageUrl) {
+                                coil.request.ImageRequest.Builder(context)
+                                    .data(imageUrl)
+                                    .build()
+                            }
                             Box(
                                 modifier = Modifier.padding(top = 8.dp, end = 8.dp),
                                 contentAlignment = Alignment.TopEnd
                             ) {
                                 AsyncImage(
-                                    model = imageUrl,
+                                    model = imageRequest,
                                     contentDescription = null,
+                                    placeholder = androidx.compose.ui.graphics.painter.ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
+                                    error = androidx.compose.ui.graphics.painter.ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
                                     modifier = Modifier
                                         .size(90.dp)
                                         .clip(RoundedCornerShape(12.dp)),
@@ -896,27 +993,75 @@ fun NewsItem(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
                                         .offset(x = 10.dp, y = (-10).dp) // Center on corner
-                                        .graphicsLayer(
+                                        .size(20.dp) // Matches the star size to prevent layout bounds expansion
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier.graphicsLayer(
                                             scaleX = starScale,
                                             scaleY = starScale,
                                             alpha = starAlpha
                                         )
+                                    ) {
+                                        // White "border" star (slightly larger)
+                                        Icon(
+                                            imageVector = Icons.Filled.Star,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        // Main Amber star
+                                        Icon(
+                                            imageVector = Icons.Filled.Star,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFFC107),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    
+                                    StarExplosion(
+                                        isTriggered = triggerExplosion,
+                                        modifier = Modifier.size(60.dp)
+                                    )
+                                }
+                            }
+                        } else {
+                            // If there is no image, show the star icon on the right side of the row
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterVertically)
+                                    .padding(end = 16.dp)
+                                    .size(24.dp), // Matches the star size to prevent layout bounds expansion
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.graphicsLayer(
+                                        scaleX = starScale,
+                                        scaleY = starScale,
+                                        alpha = starAlpha
+                                    )
                                 ) {
                                     // White "border" star (slightly larger)
                                     Icon(
                                         imageVector = Icons.Filled.Star,
                                         contentDescription = null,
                                         tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(24.dp)
                                     )
                                     // Main Amber star
                                     Icon(
                                         imageVector = Icons.Filled.Star,
                                         contentDescription = null,
                                         tint = Color(0xFFFFC107),
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
+                                
+                                StarExplosion(
+                                    isTriggered = triggerExplosion,
+                                    modifier = Modifier.size(70.dp)
+                                )
                             }
                         }
                     }
@@ -936,76 +1081,293 @@ fun NewsItem(
                                 ),
                                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.6f))
                             ) {
-                                Text(
-                                    text = displayedSummary,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.padding(12.dp),
-                                    lineHeight = 18.sp,
-                                    color = if (isReadSession) Color.Gray else MaterialTheme.colorScheme.onSurface
-                                )
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AutoAwesome,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Riassunto IA",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.weight(1f))
+                                        
+                                        // TTS Play/Stop Button
+                                        androidx.compose.material3.IconButton(
+                                            onClick = {
+                                                if (isTtsPlaying) {
+                                                    onStopTts()
+                                                } else {
+                                                    onPlayTts(displayedSummary)
+                                                }
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isTtsPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                                contentDescription = if (isTtsPlaying) "Ferma lettura" else "Leggi riassunto",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = displayedSummary,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        lineHeight = 18.sp,
+                                        color = if (isReadSession) Color.Gray else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
                         }
                     }
                 }
-                
-                DropdownMenu(
+                            DropdownMenu(
                     expanded = showContextMenu,
                     onDismissRequest = { showContextMenu = false }
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("Imposta un promemoria") },
-                        onClick = {
-                            showContextMenu = false
-                            val calendar = java.util.Calendar.getInstance()
-                            
-                            android.app.DatePickerDialog(
-                                context,
-                                { _, year, month, dayOfMonth ->
-                                    android.app.TimePickerDialog(
-                                        context,
-                                        { _, hourOfDay, minute ->
-                                            val selectedTime = java.util.Calendar.getInstance().apply {
-                                                set(year, month, dayOfMonth, hourOfDay, minute, 0)
-                                            }
-                                            com.nothing.news.util.ReminderManager.scheduleReminder(
-                                                context,
-                                                article.title,
-                                                article.link,
-                                                selectedTime.timeInMillis
-                                            )
-                                            onSetReminder(selectedTime.timeInMillis)
-                                            android.widget.Toast.makeText(context, "Promemoria in-app impostato!", android.widget.Toast.LENGTH_SHORT).show()
-                                        },
-                                        calendar.get(java.util.Calendar.HOUR_OF_DAY),
-                                        calendar.get(java.util.Calendar.MINUTE),
-                                        true
-                                    ).show()
-                                },
-                                calendar.get(java.util.Calendar.YEAR),
-                                calendar.get(java.util.Calendar.MONTH),
-                                calendar.get(java.util.Calendar.DAY_OF_MONTH)
-                            ).show()
-                        },
-                        leadingIcon = { Icon(Icons.Default.Alarm, contentDescription = null) }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Condividi") },
-                        onClick = {
-                            showContextMenu = false
-                            val sendIntent = android.content.Intent().apply {
-                                action = android.content.Intent.ACTION_SEND
-                                putExtra(android.content.Intent.EXTRA_TEXT, "${article.title}\n${article.link}")
-                                type = "text/plain"
+                    Box(
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.primary)
+                            .clickable {
+                                showContextMenu = false
+                                // Reset state
+                                calendarSuggestion = null
+                                calendarShowTitle = false
+                                calendarShowDate = false
+                                calendarShowTime = false
+                                calendarReadyToOpen = false
+                                isAnalyzingForCalendar = true
+                                showCalendarDialog = true
+                                coroutineScope.launch {
+                                    try {
+                                        val suggestion = onSuggestCalendarEvent(article)
+                                        calendarSuggestion = suggestion
+                                        isAnalyzingForCalendar = false
+                                        kotlinx.coroutines.delay(250)
+                                        calendarShowTitle = true
+                                        kotlinx.coroutines.delay(500)
+                                        calendarShowDate = true
+                                        kotlinx.coroutines.delay(500)
+                                        calendarShowTime = true
+                                        kotlinx.coroutines.delay(400)
+                                        calendarReadyToOpen = true
+                                    } catch (e: Exception) {
+                                        isAnalyzingForCalendar = false
+                                        showCalendarDialog = false
+                                        e.printStackTrace()
+                                        android.widget.Toast.makeText(context, "Errore durante l'analisi dell'articolo.", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
-                            val shareIntent = android.content.Intent.createChooser(sendIntent, null)
-                            context.startActivity(shareIntent)
-                        },
-                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) }
-                    )
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarMonth,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Aggiungi al calendario",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
                 }
             }
         }
     )
+
+    if (showCalendarDialog) {
+        val suggestion = calendarSuggestion
+        androidx.compose.ui.window.Dialog(onDismissRequest = {
+            showCalendarDialog = false
+            isAnalyzingForCalendar = false
+        }) {
+            androidx.compose.material3.Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    // Header
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.padding(bottom = 20.dp)
+                    ) {
+                        if (isAnalyzingForCalendar) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Text(
+                            text = if (isAnalyzingForCalendar) "Analisi in corso..." else "Evento suggerito dall'IA",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+
+                    // Title field
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = calendarShowTitle,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically()
+                    ) {
+                        Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                            Text(
+                                text = "TITOLO",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                            Text(
+                                text = suggestion?.title ?: article.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // Date field
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = calendarShowDate,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically()
+                    ) {
+                        Column(modifier = Modifier.padding(bottom = 16.dp)) {
+                            Text(
+                                text = "DATA",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                            Text(
+                                text = suggestion?.date?.let {
+                                    try {
+                                        val d = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(it)
+                                        if (d != null) java.text.SimpleDateFormat("EEEE d MMMM yyyy", java.util.Locale.ITALIAN).format(d) else it
+                                    } catch (e: Exception) { it }
+                                } ?: "—",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // Time field
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = calendarShowTime,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically()
+                    ) {
+                        Column(modifier = Modifier.padding(bottom = 24.dp)) {
+                            Text(
+                                text = "ORA",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 2.dp)
+                            )
+                            Text(
+                                text = suggestion?.time ?: "09:00",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // Action button - appears last
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = calendarReadyToOpen,
+                        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically()
+                    ) {
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                showCalendarDialog = false
+                                val finalTitle = suggestion?.title ?: article.title
+                                val finalDateStr = suggestion?.date
+                                val cal = java.util.Calendar.getInstance()
+                                if (!finalDateStr.isNullOrBlank()) {
+                                    try {
+                                        val parsedDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).parse(finalDateStr)
+                                        if (parsedDate != null) {
+                                            cal.time = parsedDate
+                                            val timeStr = suggestion?.time
+                                            if (!timeStr.isNullOrBlank() && timeStr.contains(":")) {
+                                                val parts = timeStr.split(":")
+                                                cal.set(java.util.Calendar.HOUR_OF_DAY, parts[0].trim().toIntOrNull() ?: 9)
+                                                cal.set(java.util.Calendar.MINUTE, parts[1].trim().toIntOrNull() ?: 0)
+                                            } else {
+                                                cal.set(java.util.Calendar.HOUR_OF_DAY, 9)
+                                                cal.set(java.util.Calendar.MINUTE, 0)
+                                            }
+                                            cal.set(java.util.Calendar.SECOND, 0)
+                                        }
+                                    } catch (e: Exception) { e.printStackTrace() }
+                                } else if (article.pubDateTimestamp > 0) {
+                                    cal.timeInMillis = article.pubDateTimestamp
+                                }
+                                val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+                                    data = android.provider.CalendarContract.Events.CONTENT_URI
+                                    putExtra(android.provider.CalendarContract.Events.TITLE, finalTitle)
+                                    putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, cal.timeInMillis)
+                                    putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, cal.timeInMillis + 60 * 60 * 1000)
+                                    putExtra(android.provider.CalendarContract.Events.DESCRIPTION, "Promemoria da Nothing News\n${article.title}\n${article.link}")
+                                }
+                                context.startActivity(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CalendarMonth,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Aggiungi al calendario")
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 
@@ -1041,4 +1403,68 @@ private fun simplifySourceName(name: String): String {
         }
     }
     return cleanedName.trim()
+}
+
+private class StarParticle(
+    val dirX: Float,
+    val dirY: Float,
+    val size: androidx.compose.ui.unit.Dp,
+    val lifeSpan: Float
+)
+
+@Composable
+fun StarExplosion(
+    isTriggered: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val progress = remember { Animatable(0f) }
+    val particles = remember(isTriggered) {
+        if (isTriggered) {
+            List(25) {
+                val angle = kotlin.random.Random.nextFloat() * 2f * Math.PI.toFloat()
+                val speed = kotlin.random.Random.nextFloat() * 4f + 2f
+                val size = (kotlin.random.Random.nextFloat() * 4 + 2).dp
+                val life = kotlin.random.Random.nextFloat() * 0.4f + 0.6f
+                StarParticle(
+                    dirX = Math.cos(angle.toDouble()).toFloat() * speed,
+                    dirY = Math.sin(angle.toDouble()).toFloat() * speed,
+                    size = size,
+                    lifeSpan = life
+                )
+            }
+        } else {
+            emptyList()
+        }
+    }
+
+    LaunchedEffect(isTriggered) {
+        if (isTriggered) {
+            progress.snapTo(0f)
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+            )
+        } else {
+            progress.snapTo(0f)
+        }
+    }
+
+    if (progress.value > 0f && progress.value < 1f) {
+        Canvas(modifier = modifier.fillMaxSize()) {
+            val p = progress.value
+            val maxDistance = 60.dp.toPx()
+            particles.forEach { particle ->
+                val alpha = (1f - (p / particle.lifeSpan)).coerceIn(0f, 1f)
+                if (alpha > 0f) {
+                    val currentX = center.x + particle.dirX * p * maxDistance
+                    val currentY = center.y + particle.dirY * p * maxDistance
+                    drawCircle(
+                        color = Color(0xFFFFC107).copy(alpha = alpha),
+                        radius = particle.size.toPx() * (1f - p * 0.5f),
+                        center = Offset(currentX, currentY)
+                    )
+                }
+            }
+        }
+    }
 }

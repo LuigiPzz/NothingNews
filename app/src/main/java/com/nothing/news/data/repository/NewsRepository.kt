@@ -403,4 +403,62 @@ class NewsRepository @Inject constructor(
             newsDao.updateFavoriteStatus(link, true)
         }
     }
+
+    suspend fun saveExternalUrlAsFavorite(url: String) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            val request = okhttp3.Request.Builder().url(url).build()
+            val response = okHttpClient.newCall(request).execute()
+            val html = response.body?.string() ?: ""
+
+            // Estrazione titolo
+            val titleRegex = """<title>(.*?)</title>""".toRegex(setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            val rawTitle = titleRegex.find(html)?.groupValues?.get(1)?.trim() ?: url
+            val title = androidx.core.text.HtmlCompat.fromHtml(rawTitle, androidx.core.text.HtmlCompat.FROM_HTML_MODE_LEGACY).toString()
+
+            // Estrazione immagine (og:image)
+            val ogImageRegex = """<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']*)["']""".toRegex(RegexOption.IGNORE_CASE)
+            val ogImageRegexAlt = """<meta[^>]*content=["']([^"']*)["'][^>]*property=["']og:image["']""".toRegex(RegexOption.IGNORE_CASE)
+            var imageUrl = ogImageRegex.find(html)?.groupValues?.get(1) ?: ogImageRegexAlt.find(html)?.groupValues?.get(1)
+
+            val currentFetchedAt = System.currentTimeMillis()
+
+            val article = NewsArticle(
+                link = url,
+                title = title,
+                author = null,
+                description = "Link salvato dai preferiti",
+                content = "",
+                pubDate = null,
+                pubDateTimestamp = currentFetchedAt,
+                imageUrl = imageUrl,
+                sourceName = "Condiviso",
+                feedUrl = "shared",
+                isRead = false,
+                isFavorite = true,
+                fetchedAt = currentFetchedAt
+            )
+
+            // Inserisce o aggiorna
+            newsDao.insertNews(listOf(article))
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // In caso di errore di rete, salva solo l'URL
+            val article = NewsArticle(
+                link = url,
+                title = url,
+                author = null,
+                description = "Link salvato (offline)",
+                content = "",
+                pubDate = null,
+                pubDateTimestamp = System.currentTimeMillis(),
+                imageUrl = null,
+                sourceName = "Condiviso",
+                feedUrl = "shared",
+                isRead = false,
+                isFavorite = true,
+                fetchedAt = System.currentTimeMillis()
+            )
+            newsDao.insertNews(listOf(article))
+        }
+    }
 }

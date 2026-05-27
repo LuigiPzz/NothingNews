@@ -97,4 +97,10 @@ object AppModule {
     ): com.nothing.news.data.repository.AiRepository {
         return com.nothing.news.data.repository.AiRepository(okHttpClient, preferenceManager)
     }
+
+    @Provides
+    @Singleton
+    fun provideTtsManager(@ApplicationContext context: Context): com.nothing.news.util.TtsManager {
+        return com.nothing.news.util.TtsManager(context)
+    }
 }

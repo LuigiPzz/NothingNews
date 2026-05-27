@@ -30,6 +30,7 @@ class PreferenceManager @Inject constructor(
     private val lastAutoBackupTimestampKey = longPreferencesKey("last_auto_backup_timestamp")
     private val remindersKey = stringPreferencesKey("reminders")
     private val geminiApiKeyKey = stringPreferencesKey("gemini_api_key")
+    private val ttsLanguageKey = stringPreferencesKey("tts_language")
 
     val reminders: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[remindersKey] ?: "[]"
@@ -37,6 +38,10 @@ class PreferenceManager @Inject constructor(
 
     val geminiApiKey: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[geminiApiKeyKey]
+    }
+
+    val ttsLanguage: Flow<String> = context.dataStore.data.map { preferences ->
+        preferences[ttsLanguageKey] ?: "Italiano"
     }
 
     val themePreference: Flow<String> = context.dataStore.data.map { preferences ->
@@ -146,6 +151,12 @@ class PreferenceManager @Inject constructor(
             } else {
                 preferences[geminiApiKeyKey] = apiKey
             }
+        }
+    }
+
+    suspend fun setTtsLanguage(language: String) {
+        context.dataStore.edit { preferences ->
+            preferences[ttsLanguageKey] = language
         }
     }
 }

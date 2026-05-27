@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <queries>
         <intent>
@@ -28,42 +30,61 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.NothingNews"
-        android:usesCleartextTraffic="true">
+        android:networkSecurityConfig="@xml/network_security_config">
         
-        <!-- Temporarily disabled for stability testing
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
             android:exported="false"
-            xmlns:tools="http://schemas.android.com/tools"
             tools:node="merge">
             <meta-data
                 android:name="androidx.work.WorkManagerInitializer"
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
-        -->
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="Nothing News"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.NothingNews">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <receiver android:name=".receiver.ReminderReceiver" android:exported="false" />
+        <receiver android:name=".receiver.BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
-        <receiver android:name=".ui.widget.NewsWidgetProvider" android:exported="true">
+        <receiver android:name=".ui.widget.NewsWidgetProvider" android:exported="true" android:label="Nothing News (1x1)" android:description="@string/widget_desc">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.nothing.news.ACTION_SYNC_WIDGET_1x1" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/news_widget_info" />
+        </receiver>
+
+        <receiver android:name=".ui.widget.NewsWidgetProvider2x1" android:exported="true" android:label="Nothing News (2x1)" android:description="@string/widget_desc_2x1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.nothing.news.ACTION_SYNC_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/news_widget_info_2x1" />
         </receiver>
     </application>
 

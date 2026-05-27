@@ -10,8 +10,14 @@ interface NewsDao {
     @Query("SELECT * FROM news_articles ORDER BY pubDateTimestamp DESC")
     fun getAllNews(): Flow<List<NewsArticle>>
 
+    @Query("SELECT * FROM news_articles")
+    suspend fun getAllNewsSync(): List<NewsArticle>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertNews(articles: List<NewsArticle>)
+
+    @Query("UPDATE news_articles SET title = :title, description = :description, content = :content, imageUrl = :imageUrl WHERE link = :link")
+    suspend fun updateArticleContent(link: String, title: String, description: String?, content: String?, imageUrl: String?)
 
     @Query("UPDATE news_articles SET imageUrl = :imageUrl WHERE link = :link AND (imageUrl IS NULL OR imageUrl = '')")
     suspend fun updateImageIfMissing(link: String, imageUrl: String?)
@@ -19,7 +25,7 @@ interface NewsDao {
     @Query("UPDATE news_articles SET isRead = :isRead WHERE link = :link")
     suspend fun updateReadStatus(link: String, isRead: Boolean)
 
-    @Query("UPDATE news_articles SET isRead = 1 WHERE isRead = 0 AND fetchedAt < :timestamp")
+    @Query("UPDATE news_articles SET isRead = 1 WHERE isRead = 0 AND pubDateTimestamp < :timestamp")
     suspend fun markOldAsRead(timestamp: Long)
 
     @Query("UPDATE news_articles SET isRead = 0")

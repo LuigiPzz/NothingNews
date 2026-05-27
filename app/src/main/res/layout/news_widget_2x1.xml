@@ -3,8 +3,8 @@
     android:id="@+id/widget_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_background"
-    android:padding="4dp">
+    android:background="@drawable/widget_background_pill"
+    android:padding="8dp">
 
     <ImageView
         android:id="@+id/widget_image"
@@ -14,11 +14,10 @@
 
     <ProgressBar
         android:id="@+id/widget_progress"
-        android:layout_width="24dp"
-        android:layout_height="24dp"
-        android:layout_gravity="bottom|right"
-        android:layout_marginBottom="12dp"
-        android:layout_marginRight="12dp"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_gravity="center_vertical|right"
+        android:layout_marginRight="20dp"
         android:indeterminate="true"
         android:indeterminateDrawable="@drawable/nothing_loader_animated"
         android:visibility="gone" />

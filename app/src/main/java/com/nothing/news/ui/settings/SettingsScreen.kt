@@ -31,6 +31,7 @@ fun SettingsScreen(
     onNavigateToSync: () -> Unit
 ) {
     val themePreference by viewModel.themePreference.collectAsState()
+    val isRefreshing by viewModel.isRefreshing.collectAsState()
     
     var showResetConfirm by remember { mutableStateOf(false) }
     var showBrowserSheet by remember { mutableStateOf(false) }
@@ -172,11 +173,22 @@ fun SettingsScreen(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // SECTION: INTERFACCIA
+            if (isRefreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    trackColor = Color.Transparent
+                )
+            }
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
             SettingsGroup(title = "INTERFACCIA") {
                 // Theme Selection
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -232,7 +244,7 @@ fun SettingsScreen(
                     Text("Scarica nuove news ogni:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     Spacer(modifier = Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(0 to "Mai", 1 to "1h", 3 to "3h", 6 to "6h", 12 to "12h", 24 to "24h").forEach { (h, label) ->
+                        listOf(0 to "Mai", 1 to "1h", 2 to "2h", 3 to "3h", 6 to "6h", 12 to "12h", 24 to "1d").forEach { (h, label) ->
                             val isSelected = backgroundUpdateFrequency == h
                             SelectableChip(label, isSelected) { viewModel.setBackgroundUpdateFrequency(h) }
                         }
@@ -243,8 +255,24 @@ fun SettingsScreen(
 
                 // Auto Mark Read
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Auto-lettura vecchie news", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Marca come lette dopo:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-lettura vecchie news", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Marca come lette dopo:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                        if (autoMarkReadDays > 0) {
+                            TextButton(
+                                onClick = { viewModel.markOldAsRead(autoMarkReadDays) },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Text("ESEGUI ORA", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(0 to "Mai", 1 to "1g", 3 to "3g", 7 to "7g", 14 to "14g", 30 to "30g").forEach { (d, label) ->
@@ -276,7 +304,7 @@ fun SettingsScreen(
 
                 ListItem(
                     headlineContent = { Text("Gestione Sincronizzazione", fontWeight = FontWeight.Bold) },
-                    supportingContent = { Text("Backup manuale via Google Drive") },
+                    supportingContent = { Text("Backup e ripristino via Google Drive") },
                     trailingContent = { Icon(Icons.Default.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline) },
                     modifier = Modifier.clickable { onNavigateToSync() },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -286,6 +314,7 @@ fun SettingsScreen(
             // SECTION: INTELLIGENZA ARTIFICIALE
             val geminiApiKey by viewModel.geminiApiKey.collectAsState()
             var tempApiKey by remember(geminiApiKey) { mutableStateOf(geminiApiKey ?: "") }
+            val ttsLanguage by viewModel.ttsLanguage.collectAsState(initial = "Italiano")
 
             SettingsGroup(title = "INTELLIGENZA ARTIFICIALE") {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -314,6 +343,20 @@ fun SettingsScreen(
                         visualTransformation = if (tempApiKey.isEmpty()) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation()
                     )
                 }
+
+                HorizontalDivider(modifier = Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Lingua Voce IA (TTS)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Scegli la lingua usata per leggere i riassunti.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("Italiano", "Inglese", "Auto").forEach { lang ->
+                            val isSelected = ttsLanguage == lang
+                            SelectableChip(lang, isSelected) { viewModel.setTtsLanguage(lang) }
+                        }
+                    }
+                }
             }
 
             // SECTION: SISTEMA
@@ -341,6 +384,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
+}
 }
 
 @Composable

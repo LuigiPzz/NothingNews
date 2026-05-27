@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Nothing News</string>
+    <string name="widget_desc">Mostra il numero di notizie non lette nel classico stile Nothing.</string>
+    <string name="widget_desc_2x1">Pillola orizzontale con il numero di notizie non lette.</string>
 </resources>

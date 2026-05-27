@@ -120,3 +120,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
+
+// Workaround for Android Studio bug when running tests:
+// "Cannot locate tasks that match ':app:unitTestClasses'"
+tasks.register("unitTestClasses") {
+    dependsOn("compileDebugUnitTestSources")
+}

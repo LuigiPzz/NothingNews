@@ -19,10 +19,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import androidx.work.WorkManager
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import com.nothing.news.worker.NewsWorker
@@ -39,8 +44,28 @@ class NewsViewModel @Inject constructor(
     private val repository: NewsRepository,
     private val aiRepository: AiRepository,
     private val preferenceManager: PreferenceManager,
-    private val googleDriveBackupManager: GoogleDriveBackupManager
+    private val googleDriveBackupManager: GoogleDriveBackupManager,
+    private val ttsManager: com.nothing.news.util.TtsManager
 ) : ViewModel() {
+
+    private val _sharedUrlToProcess = MutableStateFlow<String?>(null)
+    val sharedUrlToProcess = _sharedUrlToProcess.asStateFlow()
+
+    private val _isSavingSharedUrl = MutableStateFlow(false)
+    val isSavingSharedUrl = _isSavingSharedUrl.asStateFlow()
+
+    fun setSharedUrlToProcess(url: String?) {
+        _sharedUrlToProcess.value = url
+    }
+
+    fun saveSharedUrl(url: String) {
+        viewModelScope.launch {
+            _isSavingSharedUrl.value = true
+            repository.saveExternalUrlAsFavorite(url)
+            _sharedUrlToProcess.value = null
+            _isSavingSharedUrl.value = false
+        }
+    }
 
     // 1. ALL MutableStateFlow declarations first
     private val _backupStatus = MutableStateFlow<String?>(null)
@@ -60,6 +85,13 @@ class NewsViewModel @Inject constructor(
 
     private val _articleSummaries = MutableStateFlow<Map<String, String>>(emptyMap())
     val articleSummaries: StateFlow<Map<String, String>> = _articleSummaries
+
+    private val _resolvingLinks = MutableStateFlow<Set<String>>(emptySet())
+    val resolvingLinks: StateFlow<Set<String>> = _resolvingLinks.asStateFlow()
+
+    private val _playingArticleLink = MutableStateFlow<String?>(null)
+    val playingArticleLink: StateFlow<String?> = _playingArticleLink.asStateFlow()
+    val isTtsPlaying: StateFlow<Boolean> = ttsManager.isPlaying
 
     private val _loadingSummaries = MutableStateFlow<Set<String>>(emptySet())
     val loadingSummaries: StateFlow<Set<String>> = _loadingSummaries
@@ -110,6 +142,9 @@ class NewsViewModel @Inject constructor(
     val geminiApiKey: StateFlow<String?> = preferenceManager.geminiApiKey
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val ttsLanguage: StateFlow<String> = preferenceManager.ttsLanguage
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "Italiano")
+
     val newsArticles: StateFlow<List<NewsArticle>> = combine(
         repository.allNews,
         _sortOrder,
@@ -123,9 +158,9 @@ class NewsViewModel @Inject constructor(
         }
         
         if (sort == "Crescente") {
-            filtered.sortedBy { it.pubDateTimestamp }
+            filtered.sortedWith(compareBy<NewsArticle> { it.fetchedAt }.thenBy { it.pubDateTimestamp })
         } else {
-            filtered.sortedByDescending { it.pubDateTimestamp }
+            filtered.sortedWith(compareByDescending<NewsArticle> { it.fetchedAt }.thenByDescending { it.pubDateTimestamp })
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
@@ -142,6 +177,14 @@ class NewsViewModel @Inject constructor(
         }
         viewModelScope.launch {
             preferenceManager.filterPreference.collect { _filterType.value = it }
+        }
+        
+        viewModelScope.launch {
+            preferenceManager.backgroundUpdateFrequency.collect { hours ->
+                if (hours > 0) {
+                    scheduleBackgroundUpdate(hours)
+                }
+            }
         }
         
         viewModelScope.launch {
@@ -210,6 +253,12 @@ class NewsViewModel @Inject constructor(
     fun setGeminiApiKey(key: String?) {
         viewModelScope.launch {
             preferenceManager.setGeminiApiKey(key)
+        }
+    }
+
+    fun setTtsLanguage(language: String) {
+        viewModelScope.launch {
+            preferenceManager.setTtsLanguage(language)
         }
     }
 
@@ -359,20 +408,38 @@ class NewsViewModel @Inject constructor(
         _articleSummaries.value -= article.link
     }
 
+    suspend fun suggestCalendarEvent(
+        articleTitle: String,
+        content: String?,
+        link: String
+    ): com.nothing.news.data.repository.CalendarEventSuggestion? {
+        val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        return aiRepository.suggestCalendarEvent(articleTitle, content, link, todayStr)
+    }
+
     fun refreshNews() {
         viewModelScope.launch {
             _isRefreshing.value = true
-            val days = autoMarkReadDays.value
-            if (days > 0) {
-                repository.markOldAsRead(days)
-            }
-            // Always delete news older than 30 days (except favorites)
-            repository.deleteOldNews(30)
-
+            kotlinx.coroutines.delay(500) // Assicura che l'UI registri lo stato 'true' e mostri un feedback visivo minimo
             try {
+                val days = autoMarkReadDays.value
+                if (days > 0) {
+                    repository.markOldAsRead(days)
+                }
+                // Always delete news older than 30 days (except favorites)
+                repository.deleteOldNews(30)
+
                 val feeds = repository.allFeeds.first()
-                for (feed in feeds) {
-                    repository.fetchNewsForSource(feed)
+                coroutineScope {
+                    feeds.map { feed ->
+                        async {
+                            try {
+                                repository.fetchNewsForSource(feed)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }.awaitAll()
                 }
                 
                 // Trigger auto backup after refresh if enabled
@@ -382,6 +449,14 @@ class NewsViewModel @Inject constructor(
             } finally {
                 _isRefreshing.value = false
             }
+        }
+    }
+
+    fun markOldAsRead(days: Int) {
+        viewModelScope.launch {
+            repository.markOldAsRead(days)
+            // Trigger a refresh to update the UI count
+            refreshNews()
         }
     }
 
@@ -413,6 +488,25 @@ class NewsViewModel @Inject constructor(
         viewModelScope.launch {
             repository.updateReadStatus(article.link, !article.isRead)
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        ttsManager.shutdown()
+    }
+
+    fun playSummaryTts(link: String, text: String) {
+        viewModelScope.launch {
+            val language = preferenceManager.ttsLanguage.first()
+            ttsManager.setLanguage(language)
+            _playingArticleLink.value = link
+            ttsManager.speak(text)
+        }
+    }
+
+    fun stopSummaryTts() {
+        ttsManager.stop()
+        _playingArticleLink.value = null
     }
 
     fun updateReadStatus(link: String, isRead: Boolean) {
@@ -454,9 +548,16 @@ class NewsViewModel @Inject constructor(
         if (hours <= 0) {
             workManager.cancelAllWorkByTag("news_update")
         } else {
+            val constraints = androidx.work.Constraints.Builder()
+                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                .build()
+
             val workRequest = PeriodicWorkRequestBuilder<NewsWorker>(
                 hours.toLong(), TimeUnit.HOURS
-            ).addTag("news_update").build()
+            )
+            .setConstraints(constraints)
+            .addTag("news_update")
+            .build()
             
             workManager.enqueueUniquePeriodicWork(
                 "news_update",

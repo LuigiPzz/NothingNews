@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Configurazione base: permettiamo HTTP per compatibilità con i feed RSS legacy -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Esempio di restrizione: forziamo HTTPS per domini critici (opzionale) -->
+    <!-- 
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">generativelanguage.googleapis.com</domain>
+        <domain includeSubdomains="true">google.com</domain>
+    </domain-config> 
+    -->
+</network-security-config>

@@ -132,8 +132,8 @@ fun MyFeedsScreen(
                                 }
                             )
                             if (index < feeds.size - 1) {
-                                Divider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
                                 )
                             }

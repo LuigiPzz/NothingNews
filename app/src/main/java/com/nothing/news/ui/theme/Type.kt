@@ -38,6 +38,13 @@ val Typography = Typography(
         lineHeight = 34.sp,
         letterSpacing = 0.sp
     ),
+    displayMedium = TextStyle(
+        fontFamily = Ndot57,
+        fontWeight = FontWeight.Normal,
+        fontSize = 34.sp,
+        lineHeight = 40.sp,
+        letterSpacing = 0.sp
+    ),
     labelSmall = TextStyle(
         fontFamily = Ndot57,
         fontWeight = FontWeight.Normal,
