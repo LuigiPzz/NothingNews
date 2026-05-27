@@ -434,7 +434,7 @@ fun NewsScreen(
                     val countText = baseArticles.size.toString()
                     Text(
                         text = " · $countText",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 16.sp),
+                        style = MaterialTheme.typography.displayMedium,
                         color = Color(0xFFFF2D00),
                         modifier = Modifier.alignByBaseline()
                     )
