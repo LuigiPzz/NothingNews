@@ -16,6 +16,8 @@ val Ntype82 = FontFamily(
     Font(R.font.ntype82, FontWeight.Normal)
 )
 
+val NType82MonoFamily = FontFamily.Monospace
+
 val Typography = Typography(
     headlineLarge = TextStyle(
         fontFamily = Ntype82,
@@ -32,11 +34,32 @@ val Typography = Typography(
         letterSpacing = 0.sp
     ),
     titleLarge = TextStyle(
-        fontFamily = Ndot57,
-        fontWeight = FontWeight.Normal,
-        fontSize = 28.sp,
-        lineHeight = 34.sp,
+        fontFamily = Ntype82,
+        fontWeight = FontWeight.Medium,
+        fontSize = 18.sp,
+        lineHeight = 26.sp,
         letterSpacing = 0.sp
+    ),
+    titleMedium = TextStyle(
+        fontFamily = Ntype82,
+        fontWeight = FontWeight.Bold,
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.15.sp
+    ),
+    bodyMedium = TextStyle(
+        fontFamily = Ntype82,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.25.sp
+    ),
+    bodySmall = TextStyle(
+        fontFamily = NType82MonoFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 0.4.sp
     ),
     displayMedium = TextStyle(
         fontFamily = Ndot57,
@@ -45,11 +68,25 @@ val Typography = Typography(
         lineHeight = 40.sp,
         letterSpacing = 0.sp
     ),
-    labelSmall = TextStyle(
-        fontFamily = Ndot57,
+    labelLarge = TextStyle(
+        fontFamily = NType82MonoFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 11.sp,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.1.sp
+    ),
+    labelMedium = TextStyle(
+        fontFamily = NType82MonoFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
         lineHeight = 16.sp,
         letterSpacing = 0.5.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = NType82MonoFamily,
+        fontWeight = FontWeight.Normal,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        letterSpacing = 1.sp
     )
 )
