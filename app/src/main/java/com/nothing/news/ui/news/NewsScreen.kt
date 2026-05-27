@@ -121,6 +121,7 @@ fun NewsScreen(
     val pullToRefreshState = androidx.compose.runtime.key(refreshCounter) { 
         rememberPullToRefreshState() 
     }
+    var showFilterDialog by remember { mutableStateOf(false) }
     var showSortDialog by remember { mutableStateOf(false) }
     var showRemindersSheet by remember { mutableStateOf(false) }
     
@@ -143,8 +144,78 @@ fun NewsScreen(
         viewModel.refreshNews()
     }
     
+    val filterSheetState = rememberModalBottomSheetState()
     val sortSheetState = rememberModalBottomSheetState()
 
+    // Filter Bottom Sheet
+    if (showFilterDialog) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilterDialog = false },
+            sheetState = filterSheetState,
+            dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)) }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 40.dp, top = 8.dp)
+            ) {
+                Text(
+                    "Filtri",
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                        fontWeight = FontWeight.Light
+                    ),
+                    modifier = Modifier.padding(bottom = 20.dp, start = 4.dp)
+                )
+
+                val filterOptions = listOf(
+                    Triple("Tutti", Icons.Default.Newspaper, "Tutti gli articoli"),
+                    Triple("Non Letti", Icons.Default.MarkEmailUnread, "Non ancora letti"),
+                    Triple("Letti", Icons.Default.DoneAll, "Già letti"),
+                    Triple("Preferiti", Icons.Default.Star, "Articoli salvati")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    filterOptions.take(2).forEach { (label, icon, subtitle) ->
+                        val isSelected = currentFilter == label
+                        FilterButton(
+                            label = label,
+                            icon = icon,
+                            subtitle = subtitle,
+                            isSelected = isSelected,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            viewModel.setFilterType(label)
+                            showFilterDialog = false
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    filterOptions.drop(2).forEach { (label, icon, subtitle) ->
+                        val isSelected = currentFilter == label
+                        FilterButton(
+                            label = label,
+                            icon = icon,
+                            subtitle = subtitle,
+                            isSelected = isSelected,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            viewModel.setFilterType(label)
+                            showFilterDialog = false
+                        }
+                    }
+                }
+            }
+        }
+    }
 
 
     // Reminders Bottom Sheet
@@ -389,6 +460,14 @@ fun NewsScreen(
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
                         )
                         DropdownMenuItem(
+                            text = { Text("Filtri") },
+                            onClick = {
+                                showMenu = false
+                                showFilterDialog = true
+                            },
+                            leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Ordinamento") },
                             onClick = {
                                 showMenu = false
@@ -412,72 +491,6 @@ fun NewsScreen(
                             },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
                         )
-                    }
-                }
-            }
-
-            // Filter chips row
-            val filterOptions = listOf(
-                "Tutti" to null,
-                "Non Letti" to Icons.Default.MarkEmailUnread,
-                "Letti" to Icons.Default.DoneAll,
-                "Preferiti" to Icons.Default.Star
-            )
-            androidx.compose.foundation.lazy.LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(filterOptions.size) { idx ->
-                    val (label, icon) = filterOptions[idx]
-                    val isSelected = currentFilter == label
-                    val chipColor by animateColorAsState(
-                        targetValue = if (isSelected)
-                            MaterialTheme.colorScheme.onSurface
-                        else
-                            Color.Transparent,
-                        animationSpec = tween(200),
-                        label = "chipColor"
-                    )
-                    val textColor by animateColorAsState(
-                        targetValue = if (isSelected)
-                            MaterialTheme.colorScheme.surface
-                        else
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        animationSpec = tween(200),
-                        label = "textColor"
-                    )
-                    Surface(
-                        onClick = { viewModel.setFilterType(label) },
-                        shape = CircleShape,
-                        color = chipColor,
-                        border = androidx.compose.foundation.BorderStroke(
-                            width = if (isSelected) 0.dp else 1.dp,
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
-                        ),
-                        modifier = Modifier.height(34.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (icon != null) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = textColor,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                            }
-                            Text(
-                                text = label,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = textColor,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                        }
                     }
                 }
             }
@@ -1450,6 +1463,62 @@ fun StarExplosion(
                         center = Offset(currentX, currentY)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    subtitle: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bgColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.onSurface
+                      else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        animationSpec = tween(200),
+        label = "filterBg"
+    )
+    val contentColor by animateColorAsState(
+        targetValue = if (isSelected) MaterialTheme.colorScheme.surface
+                      else MaterialTheme.colorScheme.onSurface,
+        animationSpec = tween(200),
+        label = "filterContent"
+    )
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(88.dp),
+        shape = MaterialTheme.shapes.large,
+        color = bgColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(22.dp)
+            )
+            Column {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = contentColor,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentColor.copy(alpha = 0.6f)
+                )
             }
         }
     }
