@@ -8,6 +8,8 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+/.idea/deploymentTargetSelector.xml
+/.idea/gradle.xml
 .DS_Store
 /build
 /captures
@@ -23,3 +25,12 @@ local.properties
 *.log
 *.txt
 !proguard-rules.pro
+
+# Temporary test/debug files
+hw_feed.xml
+test_encoding.kts
+test_encoding.ps1
+
+# Agent internal data
+app/brain/
+brain/
