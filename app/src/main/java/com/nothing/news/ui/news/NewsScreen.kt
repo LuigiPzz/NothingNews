@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import kotlinx.coroutines.flow.first
@@ -120,7 +121,6 @@ fun NewsScreen(
     val pullToRefreshState = androidx.compose.runtime.key(refreshCounter) { 
         rememberPullToRefreshState() 
     }
-    var showFilterDialog by remember { mutableStateOf(false) }
     var showSortDialog by remember { mutableStateOf(false) }
     var showRemindersSheet by remember { mutableStateOf(false) }
     
@@ -143,82 +143,9 @@ fun NewsScreen(
         viewModel.refreshNews()
     }
     
-    val filterSheetState = rememberModalBottomSheetState()
     val sortSheetState = rememberModalBottomSheetState()
 
-    // Filter Bottom Sheet
-    if (showFilterDialog) {
-        ModalBottomSheet(
-            onDismissRequest = { showFilterDialog = false },
-            sheetState = filterSheetState,
-            dragHandle = { BottomSheetDefaults.DragHandle(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)) }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-                    .padding(bottom = 32.dp)
-            ) {
-                Text(
-                    "Filtri",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                        fontWeight = FontWeight.Light
-                    ),
-                    modifier = Modifier.padding(bottom = 16.dp, start = 8.dp)
-                )
-                
-                Text(
-                    "STATO LETTURA",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
-                )
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
-                ) {
-                    Column {
-                        listOf("Tutti", "Letti", "Non Letti", "Preferiti").forEachIndexed { index, filter ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { 
-                                        viewModel.setFilterType(filter)
-                                        showFilterDialog = false
-                                    }
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = currentFilter == filter,
-                                    onClick = { 
-                                        viewModel.setFilterType(filter)
-                                        showFilterDialog = false
-                                    }
-                                )
-                                Text(
-                                    text = filter, 
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.padding(start = 12.dp)
-                                )
-                            }
-                            if (index < 3) {
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(horizontal = 20.dp),
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // Reminders Bottom Sheet
     if (showRemindersSheet) {
@@ -462,14 +389,6 @@ fun NewsScreen(
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
                         )
                         DropdownMenuItem(
-                            text = { Text("Filtri") },
-                            onClick = {
-                                showMenu = false
-                                showFilterDialog = true
-                            },
-                            leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) }
-                        )
-                        DropdownMenuItem(
                             text = { Text("Ordinamento") },
                             onClick = {
                                 showMenu = false
@@ -496,6 +415,73 @@ fun NewsScreen(
                     }
                 }
             }
+
+            // Filter chips row
+            val filterOptions = listOf(
+                "Tutti" to null,
+                "Non Letti" to Icons.Default.MarkEmailUnread,
+                "Letti" to Icons.Default.DoneAll,
+                "Preferiti" to Icons.Default.Star
+            )
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(filterOptions.size) { idx ->
+                    val (label, icon) = filterOptions[idx]
+                    val isSelected = currentFilter == label
+                    val chipColor by animateColorAsState(
+                        targetValue = if (isSelected)
+                            MaterialTheme.colorScheme.onSurface
+                        else
+                            Color.Transparent,
+                        animationSpec = tween(200),
+                        label = "chipColor"
+                    )
+                    val textColor by animateColorAsState(
+                        targetValue = if (isSelected)
+                            MaterialTheme.colorScheme.surface
+                        else
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        animationSpec = tween(200),
+                        label = "textColor"
+                    )
+                    Surface(
+                        onClick = { viewModel.setFilterType(label) },
+                        shape = CircleShape,
+                        color = chipColor,
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = if (isSelected) 0.dp else 1.dp,
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                        ),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (icon != null) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = textColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = textColor,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            }
+
             Box(modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
