@@ -391,10 +391,10 @@ fun SettingsScreen(
 fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     Column {
         Text(
-            title,
+            text = title.uppercase(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
+            modifier = Modifier.padding(start = 24.dp, bottom = 8.dp, top = 8.dp)
         )
         Card(
             modifier = Modifier.fillMaxWidth(),
