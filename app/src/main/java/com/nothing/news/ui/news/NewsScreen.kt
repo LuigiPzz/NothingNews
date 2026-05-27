@@ -423,18 +423,20 @@ fun NewsScreen(
             ) {
                 Row(
                     modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Bottom
                 ) {
                     Text(
                         text = "Nothing News",
                         style = MaterialTheme.typography.displayMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.alignByBaseline()
                     )
                     val countText = baseArticles.size.toString()
                     Text(
                         text = " · $countText",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 16.sp),
-                        color = Color(0xFFFF2D00)
+                        color = Color(0xFFFF2D00),
+                        modifier = Modifier.alignByBaseline()
                     )
                 }
                 var showMenu by remember { mutableStateOf(false) }
