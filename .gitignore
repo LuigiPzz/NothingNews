@@ -34,3 +34,5 @@ test_encoding.ps1
 # Agent internal data
 app/brain/
 brain/
+google-services.json
+app/google-services.json
